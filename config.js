@@ -1,113 +1,32 @@
-var fs = require('fs')
-module.exports = function (conf) {
-  // ask the oracle thy question
-  var oracle = {
-    getHostname: function () {
-      return conf.host || 'localhost'
-    },
-    getPort: function () {
-      return 7777
-    },
-    getLocalUrl: function () {
-      return (oracle.useTLS()?'https':'http')+'://'+oracle.getHostname()+':'+oracle.getPort()
-    },
 
-    allowRemoteAccess: function () {
-      return conf.allowRemoteAccess
-    },
-    
-    requiresPassword: function () {
-      return isString(conf.singleUserPassword)
-    },
-    checkPassword: function (str) {
-      return str === conf.singleUserPassword
-    },
+var URL = require('url')
 
-    useTLS: function () {
-      return !!conf.tls
-    },
-    validateTLS: function () {
-      if (!isObject(conf.tls)) {
-        console.log('ERROR! tls config requires tls.key (path to the keyfile) and tls.cert (path to the certfile)')
-        return false
-      }
-      if (!isString(conf.tls.key)) {
-        console.log('ERROR! tls.key, a path to your TLS key, is required for TLS to work.')
-        return false
-      }
-      if (!isString(conf.tls.cert)) {
-        console.log('ERROR! tls.cert, a path to your TLS cert, is required for TLS to work.')
-        return false
-      }
-      try {
-        var keyStat = fs.statSync(conf.tls.key)
-        if (!keyStat.isFile())
-          throw "err"
-      } catch (e) {
-        console.log('ERROR! the file specified by the tls.key path was not valid.')
-        return false
-      }
-      try {
-        var certStat = fs.statSync(conf.tls.cert)
-        if (!certStat.isFile())
-          throw "err"
-      } catch (e) {
-        console.log('ERROR! the file specified by the tls.cert path was not valid.')
-        return false
-      }
-      return true
-    },
-    getTLS: function () {
-      return {
-        key: fs.readFileSync(conf.tls.key),
-        cert: fs.readFileSync(conf.tls.cert)
-      }
-    },
+module.exports = function () {
+  var remote = 'undefined' === typeof localStorage
+    ? null //'ws://localhost:8989~shs:' + require('./keys')
+    : localStorage.remote
 
-    // function to validate the config choices made
-    hasError: function () {
-      // error: allowing remote access but without a TLS cert
-      if (this.allowRemoteAccess() && !this.useTLS())
-        return true
-      // error: bad TLS config
-      if (this.useTLS() && !this.validateTLS())
-        return true
-    },
-    allowUnsafe: function () {
-      return conf.unsafe
-    }
+
+  //TODO: use _several_ remotes, so if one goes down,
+  //      you can still communicate via another...
+  //      also, if a blob does not load, use another pub...
+
+  //if we are the light client, get our blobs from the same domain.
+  var blobsUrl
+  if(remote) {
+    var r = URL.parse(remote.split('~')[0])
+    //this will work for ws and wss.
+    r.protocol = r.protocol.replace('ws', 'http')
+    r.pathname = '/blobs/get'
+    blobsUrl = URL.format(r)
   }
-
-  // give the user some feedback about the config state
-
-  // password config
-  if (oracle.requiresPassword())
-    console.log('[CFG] Password: YES.')
   else
-    console.log('[CFG] Password: NO.')
+    blobsUrl = 'http://localhost:8989/blobs/get'
 
-  // TLS
-  if (oracle.useTLS())
-    console.log('[CFG] TLS: YES.')
-  else
-    console.log('[CFG] TLS: NO.')
-
-  // allowRemoteAccess variations
-  if (oracle.allowRemoteAccess()) {
-    console.log('[CFG] Remote Access: YES.')
-    if (!oracle.requiresPassword())
-      console.log('WARNING! Remote access is allowed, but no password is configured. This is not safe!')
-    if (!oracle.useTLS())
-      console.log('ERROR! Remote access is allowed, but no TLS security is configured. Other devices will be able to steal the password or inject attacks.')
-  } else
-    console.log('[CFG] Remote Access: NO.')
-
-  return oracle
+  return {
+    remote: remote,
+    blobsUrl: blobsUrl
+  }
 }
 
-function isString (v) {
-  return v && typeof v == 'string'
-}
-function isObject (v) {
-  return v && typeof v == 'object'
-}
+
